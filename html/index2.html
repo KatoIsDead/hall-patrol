@@ -1,0 +1,291 @@
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>First Come First Serve Simulation</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body, html {
+      margin: 0; padding: 0; height: 100%;
+      background: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: hidden;
+    }
+    #container {
+      position: relative;
+      width: 1200px;
+      height: 600px;
+    }
+    canvas {
+      display: block;
+      background: white;
+      border-radius: 0;
+    }
+    button {
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <canvas id="simulation" width="1200" height="600"></canvas>
+    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-16 w-full justify-center" style="width: 1200px;">
+      <button id="startBtn" class="bg-black text-white rounded-full px-12 py-5 text-base font-normal">Start Simulation</button>
+      <button id="gateBtn" class="bg-black text-white rounded-full px-12 py-5 text-base font-normal">Close Gate</button>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('simulation');
+    const ctx = canvas.getContext('2d');
+
+    const width = canvas.width;
+    const height = canvas.height;
+
+    // Circles data
+    const circleRadius = 20;
+    const scatteredCircles = [
+      {x: 40, y: 80},
+      {x: 80, y: 120},
+      {x: 60, y: 160},
+      {x: 100, y: 140},
+      {x: 120, y: 100},
+      {x: 80, y: 60},
+      {x: 140, y: 180},
+    ];
+
+    // Moving circles queue (first come first serve)
+    let queue = [];
+
+    // Positions for moving circles on horizontal line
+    const queuePositions = [
+      {x: 230, y: height/2},
+      {x: 320, y: height/2},
+      {x: 410, y: height/2},
+    ];
+
+    // Position for circle inside rectangle below horizontal line
+    const rectCirclePos = {x: 240, y: height/2 + 40};
+
+    // Gate state
+    let gateClosed = false;
+
+    // Animation control
+    let animationId = null;
+    let simulationRunning = false;
+
+    // Circles that are moving from scattered to queue
+    let movingCircles = [];
+
+    // Speed of circles moving horizontally
+    const moveSpeed = 2;
+
+    // Gate rectangle position and size
+    const gateRect = {x: 600, y: height/2 - 10, width: 60, height: 20};
+
+    // Large vertical black rectangle on right side
+    const rightRect = {x: 1180, y: 0, width: 20, height: height};
+
+    // Vertical black line position
+    const verticalLineX = 200;
+
+    // Horizontal black line start and length
+    const horizontalLineStartX = verticalLineX;
+    const horizontalLineLength = 400;
+    const horizontalLineY = height/2;
+
+    // Small vertical gray rectangle on horizontal line
+    const smallGrayRect = {x: verticalLineX, y: horizontalLineY - 20, width: 8, height: 40};
+
+    // Rectangle below horizontal line
+    const rectBelow = {x: verticalLineX, y: horizontalLineY + 20, width: 112, height: 80};
+
+    // Circle inside rectangle below horizontal line
+    const rectCircleRadius = 20;
+
+    // Start button and gate button
+    const startBtn = document.getElementById('startBtn');
+    const gateBtn = document.getElementById('gateBtn');
+
+    // Initialize movingCircles from scatteredCircles
+    function initMovingCircles() {
+      movingCircles = scatteredCircles.map(pos => ({
+        x: pos.x,
+        y: pos.y,
+        radius: circleRadius,
+        state: 'scattered', // scattered, movingToQueue, inQueue, movingToRect, inRect
+        targetX: null,
+        targetY: null,
+        queueIndex: null,
+      }));
+    }
+
+    // Draw all static elements
+    function drawStatic() {
+      ctx.clearRect(0, 0, width, height);
+
+      // Left scattered circles (only those still scattered)
+      movingCircles.forEach(c => {
+        if (c.state === 'scattered') {
+          ctx.beginPath();
+          ctx.fillStyle = 'black';
+          ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+
+      // Vertical black line
+      ctx.fillStyle = 'black';
+      ctx.fillRect(verticalLineX, 0, 2, height);
+
+      // Horizontal black line
+      ctx.fillRect(horizontalLineStartX, horizontalLineY - 1, horizontalLineLength, 2);
+
+      // Small vertical gray rectangle on horizontal line
+      ctx.fillStyle = '#4B4B4B'; // gray
+      ctx.fillRect(smallGrayRect.x, smallGrayRect.y, smallGrayRect.width, smallGrayRect.height);
+
+      // Rectangle below horizontal line
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(rectBelow.x, rectBelow.y, rectBelow.width, rectBelow.height);
+
+      // Circle inside rectangle below horizontal line (only if occupied)
+      const rectCircle = movingCircles.find(c => c.state === 'inRect');
+      if (rectCircle) {
+        ctx.beginPath();
+        ctx.fillStyle = 'black';
+        ctx.arc(rectCirclePos.x, rectCirclePos.y, rectCircleRadius, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Large vertical black rectangle on right side with rounded left corners
+      ctx.fillStyle = 'black';
+      const r = 40; // radius for rounded corners
+      ctx.beginPath();
+      ctx.moveTo(rightRect.x + r, rightRect.y);
+      ctx.lineTo(rightRect.x + rightRect.width, rightRect.y);
+      ctx.lineTo(rightRect.x + rightRect.width, rightRect.y + rightRect.height);
+      ctx.lineTo(rightRect.x + r, rightRect.y + rightRect.height);
+      ctx.quadraticCurveTo(rightRect.x, rightRect.y + rightRect.height, rightRect.x, rightRect.y + rightRect.height - r);
+      ctx.lineTo(rightRect.x, rightRect.y + r);
+      ctx.quadraticCurveTo(rightRect.x, rightRect.y, rightRect.x + r, rightRect.y);
+      ctx.closePath();
+      ctx.fill();
+
+      // Draw gate rectangle (black or dark gray if closed)
+      ctx.fillStyle = gateClosed ? '#1a1a1a' : 'black';
+      ctx.fillRect(gateRect.x, gateRect.y, gateRect.width, gateRect.height);
+    }
+
+    // Draw moving circles on horizontal line and rectangle below
+    function drawMovingCircles() {
+      movingCircles.forEach(c => {
+        if (c.state === 'movingToQueue' || c.state === 'inQueue' || c.state === 'movingToRect') {
+          ctx.beginPath();
+          ctx.fillStyle = 'black';
+          ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // Animate function
+    function animate() {
+      drawStatic();
+      drawMovingCircles();
+
+      // Move circles that are moving to queue
+      movingCircles.forEach(c => {
+        if (c.state === 'movingToQueue') {
+          if (c.x < c.targetX) {
+            c.x += moveSpeed;
+            if (c.x > c.targetX) c.x = c.targetX;
+          }
+          if (c.x === c.targetX) {
+            c.state = 'inQueue';
+            queue.push(c);
+            c.queueIndex = queue.length - 1;
+          }
+        }
+      });
+
+      // If gate is open and queue has circles, move first circle to rectangle below
+      if (!gateClosed && queue.length > 0) {
+        const firstCircle = queue[0];
+        if (firstCircle.state === 'inQueue') {
+          firstCircle.state = 'movingToRect';
+          firstCircle.targetX = rectCirclePos.x;
+          firstCircle.targetY = rectCirclePos.y;
+        }
+      }
+
+      // Move circle from queue to rectangle below
+      movingCircles.forEach(c => {
+        if (c.state === 'movingToRect') {
+          // Move horizontally and vertically to target
+          if (c.x < c.targetX) {
+            c.x += moveSpeed;
+            if (c.x > c.targetX) c.x = c.targetX;
+          }
+          if (c.y < c.targetY) {
+            c.y += moveSpeed;
+            if (c.y > c.targetY) c.y = c.targetY;
+          }
+          if (c.x === c.targetX && c.y === c.targetY) {
+            c.state = 'inRect';
+            // Remove from queue
+            queue.shift();
+            // Update queueIndex for remaining circles
+            queue.forEach((qC, i) => qC.queueIndex = i);
+            // Move remaining queue circles left to fill gap
+            queue.forEach((qC, i) => {
+              qC.targetX = queuePositions[i].x;
+              if (qC.x > qC.targetX) {
+                qC.x -= moveSpeed;
+                if (qC.x < qC.targetX) qC.x = qC.targetX;
+              }
+            });
+          }
+        }
+      });
+
+      animationId = requestAnimationFrame(animate);
+    }
+
+    // Start simulation
+    function startSimulation() {
+      if (simulationRunning) return;
+      simulationRunning = true;
+      initMovingCircles();
+      // Start moving scattered circles to queue one by one with delay
+      let index = 0;
+      function moveNext() {
+        if (index >= movingCircles.length) return;
+        const c = movingCircles[index];
+        c.state = 'movingToQueue';
+        c.targetX = queuePositions[Math.min(index, queuePositions.length - 1)].x;
+        c.targetY = queuePositions[Math.min(index, queuePositions.length - 1)].y;
+        index++;
+        setTimeout(moveNext, 1000);
+      }
+      moveNext();
+      animate();
+    }
+
+    // Toggle gate open/close
+    function toggleGate() {
+      gateClosed = !gateClosed;
+      gateBtn.textContent = gateClosed ? 'Open Gate' : 'Close Gate';
+    }
+
+    startBtn.addEventListener('click', startSimulation);
+    gateBtn.addEventListener('click', toggleGate);
+
+    // Initial draw
+    drawStatic();
+  </script>
+</body>
+</html>
