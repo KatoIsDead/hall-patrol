@@ -1,291 +1,451 @@
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>First Come First Serve Simulation</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    body, html {
-      margin: 0; padding: 0; height: 100%;
-      background: white;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      overflow: hidden;
-    }
-    #container {
-      position: relative;
-      width: 1200px;
-      height: 600px;
-    }
-    canvas {
-      display: block;
-      background: white;
-      border-radius: 0;
-    }
-    button {
-      font-family: inherit;
-    }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>FCFS Student Queue Simulation</title>
+<script src="../js/index.js"></script>
+<style>
+  body {
+    margin: 0;
+    background: #f0f2f5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #333;
+  }
+  #fcfsCanvas {
+    background: #fff;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.1);
+    border-radius: 8px;
+    margin-top: 20px;
+    max-width: 90vw;
+    max-height: 70vh;
+    width: 900px;
+    height: 500px;
+  }
+  .controls {
+    margin-top: 20px;
+    gap: 12px;
+    display: flex;
+    align-items: center;
+  }
+  .controls > div {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  button {
+    background: #007bff;
+    border: none;
+    color: white;
+    padding: 10px 18px;
+    font-size: 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+  }
+  button:hover {
+    background: #0056b3;
+  }
+  button:disabled {
+    background: #a0a9b7;
+    cursor: default;
+  }
+  input[type="number"] {
+    padding: 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    font-size: 16px;
+    width: 60px;
+  }
+</style>
 </head>
 <body>
-  <div id="container">
-    <canvas id="simulation" width="1200" height="600"></canvas>
-    <div class="absolute bottom-10 left-1/2 -translate-x-1/2 flex gap-16 w-full justify-center" style="width: 1200px;">
-      <button id="startBtn" class="bg-black text-white rounded-full px-12 py-5 text-base font-normal">Start Simulation</button>
-      <button id="gateBtn" class="bg-black text-white rounded-full px-12 py-5 text-base font-normal">Close Gate</button>
-    </div>
+<h1>FCFS Student Queue Simulation</h1>
+<canvas id="fcfsCanvas"></canvas>
+<div class="controls">
+  <div>
+    <label for="addStudents">Add Students:</label>
+    <input type="number" id="addStudents" value="1" min="1">
+    <button id="addBtn">Add</button>
   </div>
+  <button id="startBtn">Start Simulation</button>
+  <button id="gateBtn">Close Gate</button>
+</div>
 
-  <script>
-    const canvas = document.getElementById('simulation');
-    const ctx = canvas.getContext('2d');
+<script>
+(() => {
+  const canvas = document.getElementById("fcfsCanvas");
+  const ctx = canvas.getContext("2d");
+  canvas.width = 900;
+  canvas.height = 500;
 
-    const width = canvas.width;
-    const height = canvas.height;
+  let students = [];
+  let queue = [];
+  let gateOpen = true;
+  let simulationRunning = false;
+  let currentMovingStudent = null;
+  let studentCounter = 0; // To keep track of added students
+  let addStudentIntervalId = null; // To control the interval
+  const forbiddenStudentId = 1; // ID of the green student who doesn't wear proper uniform
 
-    // Circles data
-    const circleRadius = 20;
-    const scatteredCircles = [
-      {x: 40, y: 80},
-      {x: 80, y: 120},
-      {x: 60, y: 160},
-      {x: 100, y: 140},
-      {x: 120, y: 100},
-      {x: 80, y: 60},
-      {x: 140, y: 180},
-    ];
+  // Simulation parameters
+  const initialStudentCount = 1; // Number of regular students to start with
+  const studentAddInterval = 1500; // Interval in milliseconds to add a new student
+  const maxTotalStudents = 20; // Maximum number of students to add during the simulation
 
-    // Moving circles queue (first come first serve)
-    let queue = [];
+  // Queue and gate positions
+  const queueStartX = 400; // Starting X position of the queue
+  const queueStartY = 230; // Y position of the queue
+  const queueSpacing = 30;  // Space between students in the queue
+  const gateX = 1000; //this is the end of the gate
+  const gateY = 230; // Y position of the gate center
 
-    // Positions for moving circles on horizontal line
-    const queuePositions = [
-      {x: 230, y: height/2},
-      {x: 320, y: height/2},
-      {x: 410, y: height/2},
-    ];
-
-    // Position for circle inside rectangle below horizontal line
-    const rectCirclePos = {x: 240, y: height/2 + 40};
-
-    // Gate state
-    let gateClosed = false;
-
-    // Animation control
-    let animationId = null;
-    let simulationRunning = false;
-
-    // Circles that are moving from scattered to queue
-    let movingCircles = [];
-
-    // Speed of circles moving horizontally
-    const moveSpeed = 2;
-
-    // Gate rectangle position and size
-    const gateRect = {x: 600, y: height/2 - 10, width: 60, height: 20};
-
-    // Large vertical black rectangle on right side
-    const rightRect = {x: 1180, y: 0, width: 20, height: height};
-
-    // Vertical black line position
-    const verticalLineX = 200;
-
-    // Horizontal black line start and length
-    const horizontalLineStartX = verticalLineX;
-    const horizontalLineLength = 400;
-    const horizontalLineY = height/2;
-
-    // Small vertical gray rectangle on horizontal line
-    const smallGrayRect = {x: verticalLineX, y: horizontalLineY - 20, width: 8, height: 40};
-
-    // Rectangle below horizontal line
-    const rectBelow = {x: verticalLineX, y: horizontalLineY + 20, width: 112, height: 80};
-
-    // Circle inside rectangle below horizontal line
-    const rectCircleRadius = 20;
-
-    // Start button and gate button
-    const startBtn = document.getElementById('startBtn');
-    const gateBtn = document.getElementById('gateBtn');
-
-    // Initialize movingCircles from scatteredCircles
-    function initMovingCircles() {
-      movingCircles = scatteredCircles.map(pos => ({
-        x: pos.x,
-        y: pos.y,
-        radius: circleRadius,
-        state: 'scattered', // scattered, movingToQueue, inQueue, movingToRect, inRect
-        targetX: null,
-        targetY: null,
-        queueIndex: null,
-      }));
+  // Initial random placement of students
+  function initStudents(numStudents = initialStudentCount) {
+    for (let i = 0; i < numStudents; i++) {
+      students.push(createStudent());
     }
+    // Add the student without proper uniform (green)
+    students.push(createForbiddenStudent());
+    resetSimulationState();
+  }
 
-    // Draw all static elements
-    function drawStatic() {
-      ctx.clearRect(0, 0, width, height);
+  function createStudent() {
+    const spawnX = 100; // Define the X-coordinate for the spawn point
+    const spawnY = 100; // Define the Y-coordinate for the spawn point
+    return {
+      id: studentCounter++, // Assign a unique ID
+      x: spawnX,
+      y: spawnY,
+      inQueue: false,
+      targetX: null,
+      targetY: null,
+      color: "#007bff" // Default blue color (proper uniform)
+    };
+  }
 
-      // Left scattered circles (only those still scattered)
-      movingCircles.forEach(c => {
-        if (c.state === 'scattered') {
-          ctx.beginPath();
-          ctx.fillStyle = 'black';
-          ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
+  function createForbiddenStudent() {
+    const spawnX = 100;
+    const spawnY = 100;
+    return {
+      id: forbiddenStudentId,
+      x: spawnX,
+      y: spawnY,
+      inQueue: false,
+      targetX: null,
+      targetY: null,
+      color: "green" // Green color (improper uniform)
+    };
+  }
 
-      // Vertical black line
-      ctx.fillStyle = 'black';
-      ctx.fillRect(verticalLineX, 0, 2, height);
+  function resetSimulationState() {
+    students = [];
+    queue = [];
+    currentMovingStudent = null;
+    simulationRunning = false;
+    studentCounter = 0;
+    clearInterval(addStudentIntervalId);
+    document.getElementById("startBtn").disabled = false;
+    const startBtn = document.getElementById("startBtn");
+    if (startBtn) {
+      startBtn.textContent = "Start Simulation";
+    }
+  }
 
-      // Horizontal black line
-      ctx.fillRect(horizontalLineStartX, horizontalLineY - 1, horizontalLineLength, 2);
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      // Small vertical gray rectangle on horizontal line
-      ctx.fillStyle = '#4B4B4B'; // gray
-      ctx.fillRect(smallGrayRect.x, smallGrayRect.y, smallGrayRect.width, smallGrayRect.height);
+    // Draw gate base
+    ctx.fillStyle = "#222";
+    ctx.fillRect(400, 190, 40, gateOpen ? 10 : 80); // gate opens/closes vertically
 
-      // Rectangle below horizontal line
-      ctx.strokeStyle = 'black';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(rectBelow.x, rectBelow.y, rectBelow.width, rectBelow.height);
+    // Draw queue path 1
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(400, 270);
+    ctx.lineTo(1000, 270);
+    ctx.stroke();
 
-      // Circle inside rectangle below horizontal line (only if occupied)
-      const rectCircle = movingCircles.find(c => c.state === 'inRect');
-      if (rectCircle) {
-        ctx.beginPath();
-        ctx.fillStyle = 'black';
-        ctx.arc(rectCirclePos.x, rectCirclePos.y, rectCircleRadius, 0, Math.PI * 2);
-        ctx.fill();
-      }
+      // Draw queue path 2
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(400, 200);
+    ctx.lineTo(1000, 200);
+    ctx.stroke();
 
-      // Large vertical black rectangle on right side with rounded left corners
-      ctx.fillStyle = 'black';
-      const r = 40; // radius for rounded corners
+      // Draw queue path 3 bottom
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(400, 270);
+    ctx.lineTo(700, 50500);
+    ctx.stroke();
+
+    // Draw queue path 4 top
+    ctx.strokeStyle = "#444";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(400, 200);
+    ctx.lineTo(700, -50500);
+    ctx.stroke();
+
+    // Draw guard room
+    ctx.strokeStyle = "#555";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(350, 270, 50, 60);
+
+    // Draw guard (circle)
+    ctx.fillStyle = "#555";
+    ctx.beginPath();
+    ctx.arc(375, 300, 10, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Draw students
+    for (const student of students) {
       ctx.beginPath();
-      ctx.moveTo(rightRect.x + r, rightRect.y);
-      ctx.lineTo(rightRect.x + rightRect.width, rightRect.y);
-      ctx.lineTo(rightRect.x + rightRect.width, rightRect.y + rightRect.height);
-      ctx.lineTo(rightRect.x + r, rightRect.y + rightRect.height);
-      ctx.quadraticCurveTo(rightRect.x, rightRect.y + rightRect.height, rightRect.x, rightRect.y + rightRect.height - r);
-      ctx.lineTo(rightRect.x, rightRect.y + r);
-      ctx.quadraticCurveTo(rightRect.x, rightRect.y, rightRect.x + r, rightRect.y);
-      ctx.closePath();
+      ctx.fillStyle = student.color; // Use the student's color
+      ctx.shadowColor = student.color === "#007bff" ? "rgba(0,123,255,0.3)" : "rgba(0, 128, 0, 0.3)";
+      ctx.shadowBlur = 10;
+      ctx.arc(student.x, student.y, 12, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = student.color === "#007bff" ? "#004085" : "darkgreen";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    }
+  }
 
-      // Draw gate rectangle (black or dark gray if closed)
-      ctx.fillStyle = gateClosed ? '#1a1a1a' : 'black';
-      ctx.fillRect(gateRect.x, gateRect.y, gateRect.width, gateRect.height);
+  // Move a single student towards a target position smoothly
+  function moveStudentTowards(student, targetX, targetY, speed = 0.07) {
+    const dx = targetX - student.x;
+    const dy = targetY - student.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < 1) { //NPC movement
+      student.x = targetX;
+      student.y = targetY;
+      return true; // arrived
+    } else {
+      student.x += dx * speed;
+      student.y += dy * speed;
+      return false; // moving
+    }
+  }
+
+function updateStudentMovement() {
+    // Define the closed gate as a barrier
+    const gateLeft = 400;
+    const gateRight = 440;
+    const gateTopClosed = 190;
+    const gateBottomClosed = 190 + 80; // Height when closed
+
+    const studentRadius = 12;
+
+    // Function to check if a circle intersects a rectangle (closed gate)
+    function circleIntersectsRectangle(circleX, circleY, radius, rectLeft, rectTop, rectRight, rectBottom) {
+      const closestX = Math.max(rectLeft, Math.min(circleX, rectRight));
+      const closestY = Math.max(rectTop, Math.min(circleY, rectBottom));
+      const distanceX = circleX - closestX;
+      const distanceY = circleY - closestY;
+      const distanceSquared = (distanceX * distanceX) + (distanceY * distanceY);
+      return distanceSquared < (radius * radius);
     }
 
-    // Draw moving circles on horizontal line and rectangle below
-    function drawMovingCircles() {
-      movingCircles.forEach(c => {
-        if (c.state === 'movingToQueue' || c.state === 'inQueue' || c.state === 'movingToRect') {
-          ctx.beginPath();
-          ctx.fillStyle = 'black';
-          ctx.arc(c.x, c.y, c.radius, 0, Math.PI * 2);
-          ctx.fill();
+    // First move students into their queue positions
+    let anyoneStillQueueing = false;
+    for (const student of students) {
+      if (student.inQueue) {
+        const targetX = student.targetX;
+        const targetY = student.targetY;
+        const stepX = (targetX - student.x) * 0.07;
+        const stepY = (targetY - student.y) * 0.07;
+        const nextX = student.x + stepX;
+        const nextY = student.y + stepY;
+
+        const intersectsGate = gateOpen
+          ? false
+          : circleIntersectsRectangle(nextX, nextY, studentRadius, gateLeft, gateTopClosed, gateRight, gateBottomClosed);
+
+        if (!intersectsGate) {
+          student.x = nextX;
+          student.y = nextY;
         }
-      });
-    }
 
-    // Animate function
-    function animate() {
-      drawStatic();
-      drawMovingCircles();
-
-      // Move circles that are moving to queue
-      movingCircles.forEach(c => {
-        if (c.state === 'movingToQueue') {
-          if (c.x < c.targetX) {
-            c.x += moveSpeed;
-            if (c.x > c.targetX) c.x = c.targetX;
-          }
-          if (c.x === c.targetX) {
-            c.state = 'inQueue';
-            queue.push(c);
-            c.queueIndex = queue.length - 1;
-          }
-        }
-      });
-
-      // If gate is open and queue has circles, move first circle to rectangle below
-      if (!gateClosed && queue.length > 0) {
-        const firstCircle = queue[0];
-        if (firstCircle.state === 'inQueue') {
-          firstCircle.state = 'movingToRect';
-          firstCircle.targetX = rectCirclePos.x;
-          firstCircle.targetY = rectCirclePos.y;
+        const distanceToTarget = Math.sqrt(
+          (targetX - student.x) ** 2 + (targetY - student.y) ** 2
+        );
+        if (distanceToTarget < 1) {
+          student.inQueue = false;
+          queue.push(student);
+        } else {
+          anyoneStillQueueing = true;
         }
       }
-
-      // Move circle from queue to rectangle below
-      movingCircles.forEach(c => {
-        if (c.state === 'movingToRect') {
-          // Move horizontally and vertically to target
-          if (c.x < c.targetX) {
-            c.x += moveSpeed;
-            if (c.x > c.targetX) c.x = c.targetX;
-          }
-          if (c.y < c.targetY) {
-            c.y += moveSpeed;
-            if (c.y > c.targetY) c.y = c.targetY;
-          }
-          if (c.x === c.targetX && c.y === c.targetY) {
-            c.state = 'inRect';
-            // Remove from queue
-            queue.shift();
-            // Update queueIndex for remaining circles
-            queue.forEach((qC, i) => qC.queueIndex = i);
-            // Move remaining queue circles left to fill gap
-            queue.forEach((qC, i) => {
-              qC.targetX = queuePositions[i].x;
-              if (qC.x > qC.targetX) {
-                qC.x -= moveSpeed;
-                if (qC.x < qC.targetX) qC.x = qC.targetX;
-              }
-            });
-          }
-        }
-      });
-
-      animationId = requestAnimationFrame(animate);
     }
 
-    // Start simulation
-    function startSimulation() {
-      if (simulationRunning) return;
+    // Process the next student to the gate ONLY if the gate is open and it's not the student without proper uniform
+    if (!anyoneStillQueueing && currentMovingStudent === null && gateOpen && simulationRunning && queue.length > 0 && queue[0].id !== forbiddenStudentId) {
+      processNextStudentToGate();
+    } else if (!anyoneStillQueueing && currentMovingStudent === null && gateOpen && simulationRunning && queue.length > 0 && queue[0].id === forbiddenStudentId) {
+      // If the next student doesn't have proper uniform, remove them from the queue without processing
+      const forbiddenStudent = queue.shift();
+      console.log("Student without proper uniform (" + forbiddenStudent.id + ") was not allowed to proceed.");
+      students = students.filter(s => s.id !== forbiddenStudent.id);
+      if (queue.length > 0) {
+        processNextStudentToGate();
+      }
+    }
+
+    // Move the current student toward the gate if any (and it's not the student without proper uniform)
+    if (currentMovingStudent) {
+      const targetX = gateX;
+      const targetY = gateY;
+      const stepX = (targetX - currentMovingStudent.x) * 0.07;
+      const stepY = (targetY - currentMovingStudent.y) * 0.07;
+      const nextX = currentMovingStudent.x + stepX;
+      const nextY = currentMovingStudent.y + stepY;
+
+      const intersectsGate = gateOpen
+        ? false
+        : circleIntersectsRectangle(nextX, nextY, studentRadius, gateLeft, gateTopClosed, gateRight, gateBottomClosed);
+
+      if (!intersectsGate) {
+        currentMovingStudent.x = nextX;
+        currentMovingStudent.y = nextY;
+      }
+
+      const distanceToGate = Math.sqrt(
+        (targetX - currentMovingStudent.x) ** 2 +
+        (targetY - currentMovingStudent.y) ** 2
+      );
+      if (distanceToGate < 1) {
+        students = students.filter(s => s !== currentMovingStudent);
+        currentMovingStudent = null;
+        if (gateOpen && queue.length > 0) {
+          processNextStudentToGate();
+        }
+        if (students.length === 0 && studentCounter >= maxTotalStudents) {
+          simulationRunning = false;
+          clearInterval(addStudentIntervalId);
+          alert("All allowed students have passed the gate!");
+          document.getElementById("startBtn").disabled = false;
+          document.getElementById("startBtn").textContent = "Start Simulation";
+        }
+      }
+    }
+  }
+
+  function processNextStudentToGate() {
+    if (queue.length > 0) {
+      currentMovingStudent = queue.shift();
+    }
+  }
+
+  function startSimulation() {
+    if (!simulationRunning) {
       simulationRunning = true;
-      initMovingCircles();
-      // Start moving scattered circles to queue one by one with delay
-      let index = 0;
-      function moveNext() {
-        if (index >= movingCircles.length) return;
-        const c = movingCircles[index];
-        c.state = 'movingToQueue';
-        c.targetX = queuePositions[Math.min(index, queuePositions.length - 1)].x;
-        c.targetY = queuePositions[Math.min(index, queuePositions.length - 1)].y;
-        index++;
-        setTimeout(moveNext, 1000);
+      students = []; // Clear existing students
+      queue = [];
+      currentMovingStudent = null;
+      studentCounter = 0;
+
+      // Add initial regular students
+      for (let i = 0; i < initialStudentCount; i++) {
+        const newStudent = createStudent();
+        students.push(newStudent);
+        newStudent.targetX = queueStartX + i * queueSpacing;
+        newStudent.targetY = queueStartY;
+        setTimeout(() => {
+          newStudent.inQueue = true;
+        }, i * 200);
       }
-      moveNext();
-      animate();
+
+      // Add the student without proper uniform (green) with a slight delay
+      setTimeout(() => {
+        const forbiddenStudent = createForbiddenStudent();
+        students.push(forbiddenStudent);
+        const queueBoundStudentsCount = students.filter(s => s.inQueue || queue.includes(s) || s === currentMovingStudent).length;
+        forbiddenStudent.targetX = queueStartX + queueBoundStudentsCount * queueSpacing;
+        forbiddenStudent.targetY = queueStartY;
+        setTimeout(() => {
+          forbiddenStudent.inQueue = true;
+        }, 200); // Small delay for the green student
+      }, initialStudentCount * 200 + 100);
+
+
+      document.getElementById("startBtn").disabled = true;
+      document.getElementById("startBtn").textContent = "Running...";
+
+      // Start adding new students at intervals and set their target queue positions
+      addStudentIntervalId = setInterval(() => {
+        if (studentCounter < maxTotalStudents) {
+          const newStudent = createStudent();
+          students.push(newStudent);
+          const queueBoundStudentsCount = students.filter(s => s.inQueue || queue.includes(s) || s === currentMovingStudent).length;
+          newStudent.targetX = queueStartX + queueBoundStudentsCount * queueSpacing;
+          newStudent.targetY = queueStartY;
+          setTimeout(() => {
+            newStudent.inQueue = true;
+          }, (studentCounter - (students.length - 1)) * 200); // Adjust delay calculation
+        } else if (students.length === 0 && queue.length === 0 && currentMovingStudent === null) {
+          clearInterval(addStudentIntervalId); // Stop adding if all have passed
+        }
+      }, studentAddInterval);
     }
+}
 
-    // Toggle gate open/close
-    function toggleGate() {
-      gateClosed = !gateClosed;
-      gateBtn.textContent = gateClosed ? 'Open Gate' : 'Close Gate';
+
+  function toggleGate() {
+    gateOpen = !gateOpen;
+    const gateBtn = document.getElementById("gateBtn");
+    gateBtn.textContent = gateOpen ? "Close Gate" : "Open Gate";
+
+    // If gate opens and simulation running, process queue
+    if (gateOpen && simulationRunning && currentMovingStudent === null && queue.length > 0) {
+      processNextStudentToGate();
     }
+  }
 
-    startBtn.addEventListener('click', startSimulation);
-    gateBtn.addEventListener('click', toggleGate);
+ function addStudentsManually() {
+    const numToAdd = parseInt(document.getElementById("addStudents").value);
+    if (!isNaN(numToAdd) && numToAdd > 0 && studentCounter + numToAdd <= maxTotalStudents) {
+      const spawnDelay = 200; // Milliseconds delay for manually added students
+      for (let i = 0; i < numToAdd; i++) {
+        const newStudent = createStudent();
+        students.push(newStudent);
+        if (simulationRunning) {
+          const queueBoundStudentsCount = students.filter(s => s.inQueue || queue.includes(s) || s === currentMovingStudent).length;
+          newStudent.targetX = queueStartX + queueBoundStudentsCount * queueSpacing;
+          newStudent.targetY = queueStartY;
+          setTimeout(() => {
+            newStudent.inQueue = true;
+          }, (studentCounter - numToAdd + 1 + i) * spawnDelay); // Delay based on manual add order
+        }
+      }
+    }
+  }
 
-    // Initial draw
-    drawStatic();
-  </script>
+  function animate() {
+    draw();
+    if (simulationRunning) {
+      updateStudentMovement();
+    }
+    requestAnimationFrame(animate);
+  }
+
+  // Initialization
+  initStudents();
+  animate();
+
+  // Setup buttons
+  document.getElementById("startBtn").addEventListener("click", startSimulation);
+  document.getElementById("gateBtn").addEventListener("click", toggleGate);
+  document.getElementById("addBtn").addEventListener("click", addStudentsManually);
+})();
+</script>
 </body>
 </html>
